@@ -1316,17 +1316,17 @@ static int Demux( demux_t *p_demux )
             //msg_Info( p_demux, "current difftime = %f", diffTime);
             totalDiffSum += diffTime;
             double totalAverage = totalDiffSum / iterCounter;
-            msg_Info( p_demux, "current total average = %f", totalAverage);
+            // msg_Info( p_demux, "current total average = %f", totalAverage);
             if (totalAverage <= AVERAGE_ITER_TIME_FAST)
             {
                 // heightening limit for fast-demuxing formats
                 limit = (int)(limit * 4 / 3);
-                msg_Info( p_demux, "heightening limit for fast-demuxing formats to %d", limit);
+                // msg_Info( p_demux, "heightening limit for fast-demuxing formats to %d", limit);
             } 
             else if(totalAverage >= AVERAGE_ITER_TIME_SLOW)
             {
                 limit = (int)(limit * 2 / 3);
-                msg_Info( p_demux, "lowering limit for slow-demuxing formats to %d", limit);
+                // msg_Info( p_demux, "lowering limit for slow-demuxing formats to %d", limit);
             }
             last = current;
         }
@@ -1360,7 +1360,7 @@ static int Demux( demux_t *p_demux )
         else
         {
             faillessCounter ++;
-            msg_Info( p_demux, "faillessCounter incremented to %d", faillessCounter );
+            // msg_Info( p_demux, "faillessCounter incremented to %d", faillessCounter );
             if(unlikely(faillessCounter > limit))
             {
                 msg_Info( p_demux, "Stable input: faillessCounter > %d", limit );
@@ -1408,6 +1408,8 @@ static int Demux( demux_t *p_demux )
     }
     if(unlikely(reportSuccess))
     {
+        reportSuccess = false;
+        msg_Info( p_demux, "reporting state to the Input module" );
         return STABILIZED_S;
     }
     return p_sys->b_error ? 0 : 1;
