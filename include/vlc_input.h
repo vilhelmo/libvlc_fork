@@ -339,6 +339,7 @@ typedef enum input_state_e
     PAUSE_S,
     END_S,
     ERROR_S,
+    STABILIZED_S,
 } input_state_e;
 
 /**

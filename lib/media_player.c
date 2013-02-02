@@ -268,7 +268,9 @@ input_event_changed( vlc_object_t * p_this, char const * psz_cmd,
                 libvlc_state = libvlc_Error;
                 event.type = libvlc_MediaPlayerEncounteredError;
                 break;
-
+            case STABILIZED_S:
+                event.type = libvlc_MediaPlayerStabilized;
+                break;
             default:
                 return VLC_SUCCESS;
         }
@@ -513,6 +515,7 @@ libvlc_media_player_new( libvlc_instance_t *instance )
     register_event(mp, PausableChanged);
 
     register_event(mp, Vout);
+    register_event(mp, Stabilized);
 
     /* Snapshot initialization */
     register_event(mp, SnapshotTaken);

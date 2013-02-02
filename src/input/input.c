@@ -581,6 +581,12 @@ static void MainLoopDemux( input_thread_t *p_input, bool *pb_changed, bool *pb_d
     else
         i_ret = demux_Demux( p_input->p->input.p_demux );
 
+
+    if(unlikely(i_ret == STABILIZED_S))
+    {
+        input_ChangeState( p_input, STABILIZED_S);
+    }
+
     if( i_ret > 0 )
     {
         if( p_input->p->input.p_demux->info.i_update )
@@ -2825,13 +2831,22 @@ static void SlaveDemux( input_thread_t *p_input, bool *pb_demux_polled )
                     break;
                 }
 
-                if( ( i_ret = demux_Demux( in->p_demux ) ) <= 0 )
+                i_ret = demux_Demux( in->p_demux );
+                if(unlikely(i_ret == STABILIZED_S))
+                {
+                    input_ChangeState( p_input, STABILIZED_S);
+                }
+                if( ( i_ret ) <= 0 )
                     break;
             }
         }
         else
         {
             i_ret = demux_Demux( in->p_demux );
+            if(unlikely(i_ret == STABILIZED_S))
+            {
+                input_ChangeState( p_input, STABILIZED_S);
+            }
         }
 
         if( i_ret <= 0 )

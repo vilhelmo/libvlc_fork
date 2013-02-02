@@ -66,6 +66,15 @@ extern "C" {
 #include "../access/mms/asf.h"  /* Who said ugly ? */
 }
 
+
+static bool GLOBAL_hasVideoTrack = false;
+#define STABLE_AUDIO 250
+#define STABLE_VIDEO 350
+#define AVERAGE_ITER_TIME_SLOW 30
+#define AVERAGE_ITER_TIME_FAST 20
+
+#include <sys/time.h>
+
 using namespace std;
 
 /*****************************************************************************
@@ -700,7 +709,10 @@ static int SessionsSetup( demux_t *p_demux )
         if( !strcmp( sub->mediumName(), "audio" ) )
             i_buffer = 100000;
         else if( !strcmp( sub->mediumName(), "video" ) )
+        {
+            GLOBAL_hasVideoTrack = true;
             i_buffer = 2000000;
+        }
         else if( !strcmp( sub->mediumName(), "text" ) )
             ;
         else continue;
@@ -1212,7 +1224,9 @@ static int Demux( demux_t *p_demux )
         }
 
         if( tk->b_asf || tk->b_muxed )
+        {
             b_send_pcr = false;
+        }
 #if 0
         if( i_pcr == 0 )
         {
@@ -1253,6 +1267,10 @@ static int Demux( demux_t *p_demux )
     p_sys->scheduler->unscheduleDelayedTask( task );
 
     /* Check for gap in pts value */
+    static int faillessCounter = 0;
+    static bool reportSuccess = false;
+    static bool stopCounting = false;
+    bool failed = false;
     for( i = 0; i < p_sys->i_track; i++ )
     {
         live_track_t *tk = p_sys->track[i];
@@ -1270,8 +1288,89 @@ static int Demux( demux_t *p_demux )
             p_sys->i_pcr = 0;
             p_sys->f_npt = 0.;
             i_pcr = 0;
+            //
+            failed = true;
         }
     }
+    if(unlikely(!stopCounting)) 
+    {
+        static  timeval current, last;
+        static bool first = true;
+        static double totalDiffSum = 0;
+        static long iterCounter = 0;
+
+        int limit = (GLOBAL_hasVideoTrack ? STABLE_VIDEO : STABLE_AUDIO);
+
+        iterCounter ++;
+        if(unlikely(first))
+        {
+            first = false;
+            gettimeofday(&last, NULL);
+        }
+        else 
+        {
+            double diffTime;
+            gettimeofday(&current, NULL);
+            diffTime = (current.tv_sec - last.tv_sec) * 1000.0;      // sec to ms
+            diffTime += (current.tv_usec - last.tv_usec) / 1000.0;   // us to ms
+            //msg_Info( p_demux, "current difftime = %f", diffTime);
+            totalDiffSum += diffTime;
+            double totalAverage = totalDiffSum / iterCounter;
+            msg_Info( p_demux, "current total average = %f", totalAverage);
+            if (totalAverage <= AVERAGE_ITER_TIME_FAST)
+            {
+                // heightening limit for fast-demuxing formats
+                limit = (int)(limit * 4 / 3);
+                msg_Info( p_demux, "heightening limit for fast-demuxing formats to %d", limit);
+            } 
+            else if(totalAverage >= AVERAGE_ITER_TIME_SLOW)
+            {
+                limit = (int)(limit * 2 / 3);
+                msg_Info( p_demux, "lowering limit for slow-demuxing formats to %d", limit);
+            }
+            last = current;
+        }
+        if(unlikely(failed)) 
+        {
+            msg_Info( p_demux, "input failed, reset of the faillessCounter, it reached %d", faillessCounter );
+            if(faillessCounter >= (int)(limit *3/4))
+            {
+                msg_Info( p_demux, "%d >= (int)(limit *3/4)", faillessCounter );
+                //faillessCounter = (int)(limit*2/3);
+                faillessCounter = (int)(limit*3/4);
+            } 
+            else if (faillessCounter >= (int)(limit*2/3))
+            {
+                msg_Info( p_demux, "%d >= (int)(limit*2/3)", faillessCounter );
+                // faillessCounter = (int)(limit/2);
+                faillessCounter = (int)(limit*2/3);
+            } 
+            else if (faillessCounter >= (int)(limit/2))
+            {
+                msg_Info( p_demux, "%d >= (int)(limit/2)", faillessCounter );
+                // faillessCounter = (int) (limit/3);
+                faillessCounter = (int) (limit/2);
+            }
+            else
+            {
+                msg_Info( p_demux, "Failless conunter has not reached event half the limit, leaving its value intact");
+            }
+            msg_Info( p_demux, "set faillessCounter to: %d", faillessCounter );
+        }
+        else
+        {
+            faillessCounter ++;
+            msg_Info( p_demux, "faillessCounter incremented to %d", faillessCounter );
+            if(unlikely(faillessCounter > limit))
+            {
+                msg_Info( p_demux, "Stable input: faillessCounter > %d", limit );
+                msg_Info( p_demux, "Stable input" );
+                reportSuccess = true;
+                stopCounting = true;
+            }
+        }
+    }
+
 
     if( p_sys->b_multicast && p_sys->b_no_data &&
         ( p_sys->i_no_data_ti > 120 ) )
@@ -1306,6 +1405,10 @@ static int Demux( demux_t *p_demux )
         /* EOF ? */
         msg_Warn( p_demux, "no data received in 10s, eof ?" );
         return 0;
+    }
+    if(unlikely(reportSuccess))
+    {
+        return STABILIZED_S;
     }
     return p_sys->b_error ? 0 : 1;
 }
@@ -1835,7 +1938,7 @@ static void StreamRead( void *p_private, unsigned int i_size,
         {
             void *p_tmp;
             msg_Dbg( p_demux, "lost %d bytes", i_truncated_bytes );
-            msg_Dbg( p_demux, "increasing buffer size to %d", tk->i_buffer * 2 );
+            msg_Dbg( p_demux, "increasing buffer size from %d to %d", tk->i_buffer, tk->i_buffer * 2 );
             p_tmp = realloc( tk->p_buffer, tk->i_buffer * 2 );
             if( p_tmp == NULL )
             {
